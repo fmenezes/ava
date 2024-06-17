@@ -8,7 +8,16 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+openai-whisper = {git = "https://github.com/openai/whisper.git"}
+pyaudio = "^0.2.14"
+wave = "^0.0.2"
+numpy = "^2.0.0"
 
+
+[tool.poetry.group.dev.dependencies]
+pylint = "^3.2.3"
+black = "^24.4.2"
+isort = "^5.13.2"
 
 [build-system]
 requires = ["poetry-core"]
