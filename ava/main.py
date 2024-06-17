@@ -69,7 +69,6 @@ def _get_transcribe(audio: str, language: str = "en"):
 def _main():
     with tempfile.TemporaryDirectory() as tmpdirname:
         audio_path = f"{tmpdirname}/audio.wav"
-        print(audio_path)
         _record_audio(output_file=audio_path, silence_duration=SILENCE_DURATION)
         result = _get_transcribe(audio=audio_path)
         if result:
