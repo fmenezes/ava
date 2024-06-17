@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "ava"
+version = "0.0.1"
+description = "A.V.A. is a virtual assistant that can answer questions about the weather, news and more. It also has a chatbot feature that allows you to ask it questions."
+authors = ["Filipe C Menezes <fcmenezes87@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+start = "ava.main:_main"
