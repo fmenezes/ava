@@ -1,81 +1,94 @@
-import tempfile
-import wave
+import uuid
 
-import numpy as np
-import pyaudio
-import whisper
+from flask import Flask, jsonify, request, render_template
+from flask_sqlalchemy import SQLAlchemy
 
-# Parameters
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
-CHUNK = 1024
-SILENCE_THRESHOLD = 500  # Adjust this threshold based on your environment
-SILENCE_DURATION = 2  # Duration of silence in seconds to trigger stopping the recording
+from ava.inference import infere 
 
-model = whisper.load_model("large")
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///mydatabase.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
 
 
-def _is_silent(data_chunk, threshold=SILENCE_THRESHOLD):
-    """Returns 'True' if below the silence threshold."""
-    audio_data = np.frombuffer(data_chunk, dtype=np.int16)
-    return np.abs(audio_data).mean() < threshold
+class Conversation(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    messages = db.relationship("Message", backref="conversation", lazy=True)
 
 
-def _record_audio(output_file: str, silence_duration: int = SILENCE_DURATION):
-    """Record audio from the microphone and save it to a WAV file, stopping on silence detection."""
-    audio = pyaudio.PyAudio()
-
-    stream = audio.open(
-        format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+class Message(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    role = db.Column(db.String(20), nullable=False)
+    content = db.Column(db.String(2000), nullable=False)
+    conversation_id = db.Column(
+        db.String(36), db.ForeignKey("conversation.id"), nullable=False
     )
 
-    print("Recording...")
 
-    frames = []
-    silence_count = 0
-    silence_limit = int(RATE / CHUNK * silence_duration)
-
-    while True:
-        data = stream.read(CHUNK)
-        frames.append(data)
-
-        if _is_silent(data):
-            silence_count += 1
-        else:
-            silence_count = 0
-
-        if silence_count > silence_limit:
-            break
-
-    print("Finished recording due to silence detection.")
-
-    stream.stop_stream()
-    stream.close()
-    audio.terminate()
-
-    wf = wave.open(output_file, "wb")
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(audio.get_sample_size(FORMAT))
-    wf.setframerate(RATE)
-    wf.writeframes(b"".join(frames))
-    wf.close()
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 
-def _get_transcribe(audio: str, language: str = "en"):
-    return model.transcribe(audio=audio, language=language)
+@app.route("/conversations", methods=["POST"])
+def create_conversation():
+    new_conversation = Conversation()
+    db.session.add(new_conversation)
+    db.session.commit()
+    return jsonify({"id": new_conversation.id}), 201
 
 
-def _main():
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        audio_path = f"{tmpdirname}/audio.wav"
-        _record_audio(output_file=audio_path, silence_duration=SILENCE_DURATION)
-        result = _get_transcribe(audio=audio_path)
-        if result:
-            print("-" * 50)
-            print(result.get("text", "No transcription text found."))
-        else:
-            print("Transcription failed.")
+@app.route("/conversations/<id>", methods=["GET"])
+def get_conversation(id):
+    conversation = Conversation.query.get_or_404(id)
+    return jsonify(
+        {
+            "id": conversation.id,
+            "messages": [
+                {"id": msg.id, "role": msg.role, "content": msg.content}
+                for msg in conversation.messages
+            ],
+        }
+    )
+
+
+@app.route("/conversations/<id>/messages", methods=["POST"])
+def add_message(id):
+    conversation = Conversation.query.get_or_404(id)
+    data = request.get_json()
+    user_message = Message(
+        role="user", content=data["content"], conversation_id=conversation.id
+    )
+    db.session.add(user_message)
+    db.session.commit()
+
+    bot_content = infere(data["content"])
+    bot_message = Message(
+        role="bot", content=bot_content, conversation_id=conversation.id
+    )
+    db.session.add(bot_message)
+    db.session.commit()
+
+    return (
+        jsonify(
+            [{
+                "id": user_message.id,
+                "role": user_message.role,
+                "content": user_message.content,
+            }, {
+                "id": bot_message.id,
+                "role": bot_message.role,
+                "content": bot_message.content,
+            }]
+        ),
+        201,
+    )
+
+
+def _main() -> None:
+    with app.app_context():
+        db.create_all()
+    app.run(host='0.0.0.0', port=8080)
 
 
 if __name__ == "__main__":
