@@ -4,9 +4,11 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
 from langchain_community.agent_toolkits.load_tools import load_tools
 import ollama
 import sqlite3
+from platform import platform
 
 
 st.title("A.V.A.")
@@ -27,7 +29,15 @@ with st.sidebar:
 model = ChatOllama(model=st.session_state.model)
 cnn = sqlite3.connect("db.sqlite3", check_same_thread=False)
 checkpointer = SqliteSaver(cnn)
-tools = load_tools(["ddg-search", "terminal"], allow_dangerous_tools=True)
+
+@tool
+def tool_platform():
+    """Get which system/OS is running"""
+    return platform()
+
+
+tools = load_tools(["ddg-search", "terminal"],
+                   allow_dangerous_tools=True) + [tool_platform]
 app = create_react_agent(
     model, tools, checkpointer=checkpointer, state_modifier="You're A.V.A. Artificial Virtual Assistant who is tasked to help your user well as possible. Keep answers short., Only use tools if strictly needed.", debug=True)
 
@@ -41,6 +51,8 @@ with st.spinner("Thinking..."):
         app.update_state(config={"configurable": {
             "thread_id": st.session_state.session_id}}, values={'messages': messages})
     for message in messages:
+        if message.type not in ["human", "ai"] or message.content == "":
+            continue
         with st.chat_message(message.type):
             st.markdown(message.content)
 
