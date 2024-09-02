@@ -1,61 +1,46 @@
 import getpass
 import streamlit as st
-from langchain_community.chat_message_histories import SQLChatMessageHistory
-from langchain_community.chat_models.ollama import ChatOllama
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.prebuilt import create_react_agent
+from langchain_community.agent_toolkits.load_tools import load_tools
 import ollama
-
-def get_session_history(session_id: str) -> BaseChatMessageHistory:
-    return SQLChatMessageHistory(session_id, "sqlite:///db.sqlite3")
+import sqlite3
 
 
 st.title("A.V.A.")
 
 models = [model['name'] for model in ollama.list()['models']]
-default_model = None
 
 try:
-    default_model = models.index("llama2:13b")
+    default_model = models.index("llama3.1:8b")
 except:
-    pass
+    default_model = None
 
 with st.sidebar:
     st.session_state.session_id = st.text_input(
         "session id", getpass.getuser())
     st.session_state.model = st.selectbox(
         "model", models, default_model)
-    if st.button("reset"):
-        history: SQLChatMessageHistory = get_session_history(
-            st.session_state.session_id
-        )
-        history.clear()
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            "You're A.V.A. (Artificial Virtual Assistant). Response messages with a short answer, like one small sentence.",
-        ),
-        MessagesPlaceholder(variable_name="history"),
-        ("human", "{input}"),
-    ]
-)
+model = ChatOllama(model=st.session_state.model)
+cnn = sqlite3.connect("db.sqlite3", check_same_thread=False)
+checkpointer = SqliteSaver(cnn)
+tools = load_tools(["ddg-search", "terminal"], allow_dangerous_tools=True)
+app = create_react_agent(
+    model, tools, checkpointer=checkpointer, state_modifier="You're A.V.A. Artificial Virtual Assistant who is tasked to help your user well as possible. Keep answers short., Only use tools if strictly needed.", debug=True)
 
-chain = RunnableWithMessageHistory(
-    prompt | ChatOllama(model=st.session_state.model) | StrOutputParser(),
-    input_messages_key="input",
-    history_messages_key="history",
-    get_session_history=get_session_history,
-)
+history = app.get_state(config={"configurable": {
+    "thread_id": st.session_state.session_id}})
 
 with st.spinner("Thinking..."):
-    history: SQLChatMessageHistory = get_session_history(st.session_state.session_id)
-    if len(history.get_messages()) == 0:
-        history.add_ai_message("Hi, how can I assist you today?")
-    for message in history.get_messages():
+    messages = history.values.get("messages", [])
+    if len(messages) == 0:
+        messages = [AIMessage("Hello, how may I assist you today?")]
+        app.update_state(config={"configurable": {
+            "thread_id": st.session_state.session_id}}, values={'messages': messages})
+    for message in messages:
         with st.chat_message(message.type):
             st.markdown(message.content)
 
@@ -64,6 +49,10 @@ if prompt := st.chat_input("What is up?"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            st.write_stream(chain.stream(
-                {"input": prompt}, config={"configurable": {"session_id": st.session_state.session_id}}
-            ))
+            final_state = app.invoke(
+                {"messages": [HumanMessage(
+                    content=prompt)]},
+                config={"configurable": {
+                    "thread_id": st.session_state.session_id}}
+            )
+            st.write(final_state["messages"][-1].content)
