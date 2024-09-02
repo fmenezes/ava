@@ -15,12 +15,18 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
 st.title("A.V.A.")
 
 models = [model['name'] for model in ollama.list()['models']]
+default_model = None
+
+try:
+    default_model = models.index("llama2:13b")
+except:
+    pass
 
 with st.sidebar:
     st.session_state.session_id = st.text_input(
         "session id", getpass.getuser())
     st.session_state.model = st.selectbox(
-        "model", models, models.index("llama2:13b"))
+        "model", models, default_model)
     if st.button("reset"):
         history: SQLChatMessageHistory = get_session_history(
             st.session_state.session_id
