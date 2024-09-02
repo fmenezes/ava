@@ -39,7 +39,7 @@ def tool_platform():
 tools = load_tools(["ddg-search", "terminal"],
                    allow_dangerous_tools=True) + [tool_platform]
 app = create_react_agent(
-    model, tools, checkpointer=checkpointer, state_modifier="You're A.V.A. Artificial Virtual Assistant who is tasked to help your user well as possible. Keep answers short., Only use tools if strictly needed.", debug=True)
+    model, tools, checkpointer=checkpointer, state_modifier="You're A.V.A. Artificial Virtual Assistant who is tasked to help your user well as possible. Keep answers short. Only use tools if strictly needed.", debug=True)
 
 history = app.get_state(config={"configurable": {
     "thread_id": st.session_state.session_id}})
