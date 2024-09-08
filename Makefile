@@ -2,7 +2,7 @@
 
 .PHONY: run
 run: ## Runs agent
-	poetry run streamlit run ava/main.py
+	poetry run streamlit run ava/main.py --server.address 0.0.0.0
 
 .PHONY: install
 install: ## Install dependencies
